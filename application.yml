@@ -1,0 +1,13 @@
+server:
+  port: 2333
+
+lavalink:
+  server:
+    password: "yourpassword"
+    sources:
+      youtube: true
+      spotify: true
+
+logging:
+  level:
+    root: INFO
