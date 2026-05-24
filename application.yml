@@ -1,7 +1,5 @@
 version: "3.9"
 
-name: rf-studio
-
 networks:
   rf-net:
     driver: bridge
@@ -10,175 +8,163 @@ volumes:
   redis-data:
   postgres-data:
 
+# =========================
+# CORE INFRA
+# =========================
 services:
 
-  # =========================
-  # EDGE GATEWAY
-  # =========================
-  edge-gateway:
-    build: ../../apps/edge-gateway
-    container_name: edge-gateway
-    restart: unless-stopped
-    ports:
-      - "80:3000"
-    networks:
-      - rf-net
-    depends_on:
-      - api-gateway
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
-  # =========================
-  # API GATEWAY
-  # =========================
-  api-gateway:
-    build: ../../gateway/api-gateway
-    container_name: api-gateway
-    restart: unless-stopped
-    networks:
-      - rf-net
-    depends_on:
-      - redis
-      - postgres
-
-  # =========================
-  # REALTIME GATEWAY
-  # =========================
-  realtime-gateway:
-    build: ../../gateway/realtime-gateway
-    container_name: realtime-gateway
-    restart: unless-stopped
-    networks:
-      - rf-net
-    depends_on:
-      - redis
-
-  # =========================
-  # SERVICES
-  # =========================
-  media-service:
-    build: ../../services/media-service
-    restart: unless-stopped
-    networks: [rf-net]
-
-  playback-service:
-    build: ../../services/playback-service
-    restart: unless-stopped
-    networks: [rf-net]
-    depends_on:
-      - lavalink-primary
-
-  queue-service:
-    build: ../../services/queue-service
-    restart: unless-stopped
-    networks: [rf-net]
-
-  lyrics-service:
-    build: ../../services/lyrics-provider-service
-    restart: unless-stopped
-    networks: [rf-net]
-
-  karaoke-service:
-    build: ../../services/karaoke-session-service
-    restart: unless-stopped
-    networks: [rf-net]
-
-  quiz-service:
-    build: ../../services/quiz-service
-    restart: unless-stopped
-    networks: [rf-net]
-
-  # =========================
-  # REDIS CLUSTER (STATE STORE)
-  # =========================
   redis:
     image: redis:7-alpine
-    container_name: redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
+    container_name: rf-redis
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
-    networks: [rf-net]
+    networks:
+      - rf-net
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
-  # =========================
-  # POSTGRES (STATE PERSISTENCE)
-  # =========================
   postgres:
     image: postgres:16
-    container_name: postgres
-    restart: unless-stopped
+    container_name: rf-postgres
     environment:
       POSTGRES_USER: rf
       POSTGRES_PASSWORD: rfpass
       POSTGRES_DB: rfstudio
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    networks: [rf-net]
+    networks:
+      - rf-net
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rf"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
-  # =========================
-  # LAVALINK CLUSTER
-  # =========================
-  lavalink-primary:
-    image: fredboat/lavalink:4
-    container_name: lavalink-primary
-    restart: unless-stopped
-    environment:
-      - SERVER_PORT=2333
-      - LAVALINK_SERVER_PASSWORD=changeme
-    networks: [rf-net]
-
-  lavalink-backup:
-    image: fredboat/lavalink:4
-    container_name: lavalink-backup
-    restart: unless-stopped
-    environment:
-      - SERVER_PORT=2334
-      - LAVALINK_SERVER_PASSWORD=changeme
-    networks: [rf-net]
-
-  # =========================
-  # MONITORING STACK
-  # =========================
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
-    restart: unless-stopped
+# =========================
+# EVENT BUS (Redis-based abstraction layer)
+# =========================
+  event-bus:
+    image: node:20-alpine
+    working_dir: /app
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks: [rf-net]
+      - ../distributed-event-bus:/app
+    command: ["node", "index.js"]
+    networks:
+      - rf-net
+    depends_on:
+      - redis
+    restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana
-    container_name: grafana
+# =========================
+# LAVALINK PRIMARY
+# =========================
+  lavalink-primary:
+    image: eclipse-temurin:17-jre
+    container_name: lavalink-primary
+    networks:
+      - rf-net
+    volumes:
+      - ../lavalink-cluster/primary:/app
+    working_dir: /app
+    command: ["java", "-jar", "Lavalink.jar"]
     restart: unless-stopped
     ports:
-      - "3001:3000"
-    networks: [rf-net]
+      - "2333:2333"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2333/version"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  # =========================
-  # REDIS INSPECTOR (OPTIONAL)
-  # =========================
-  redis-commander:
-    image: rediscommander/redis-commander
-    container_name: redis-ui
+# =========================
+# LAVALINK BACKUP (failover)
+# =========================
+  lavalink-backup:
+    image: eclipse-temurin:17-jre
+    container_name: lavalink-backup
+    networks:
+      - rf-net
+    volumes:
+      - ../lavalink-cluster/backup:/app
+    working_dir: /app
+    command: ["java", "-jar", "Lavalink.jar"]
+    restart: unless-stopped
+    ports:
+      - "2334:2333"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2333/version"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+# =========================
+# API GATEWAY
+# =========================
+  api-gateway:
+    build: ../gateway/api-gateway
+    networks:
+      - rf-net
+    depends_on:
+      - redis
+      - postgres
+      - event-bus
     restart: unless-stopped
     environment:
-      - REDIS_HOSTS=local:redis:6379
+      REDIS_URL: redis://redis:6379
+      POSTGRES_URL: postgres://rf:rfpass@postgres:5432/rfstudio
+
+# =========================
+# EDGE GATEWAY
+# =========================
+  edge-gateway:
+    build: ../gateway/edge-gateway
+    networks:
+      - rf-net
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
     ports:
-      - "8081:8081"
-    networks: [rf-net]
+      - "80:80"
+      - "443:443"
+
+# =========================
+# DISCORD ORCHESTRATOR BOT
+# =========================
+  discord-orchestrator:
+    build: ../apps/discord-orchestrator
+    networks:
+      - rf-net
+    depends_on:
+      - lavalink-primary
+      - lavalink-backup
+      - redis
+    restart: unless-stopped
+    environment:
+      LAVALINK_PRIMARY: http://lavalink-primary:2333
+      LAVALINK_BACKUP: http://lavalink-backup:2333
+      REDIS_URL: redis://redis:6379
+
+# =========================
+# MUSIC / QUIZ / HYBRID BOT
+# =========================
+  discord-music:
+    build: ../apps/discord-music-gateway
+    networks:
+      - rf-net
+    depends_on:
+      - discord-orchestrator
+    restart: unless-stopped
+
+  discord-quiz:
+    build: ../apps/discord-quiz-gateway
+    networks:
+      - rf-net
+    depends_on:
+      - discord-orchestrator
+    restart: unless-stopped
