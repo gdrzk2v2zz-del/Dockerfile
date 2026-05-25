@@ -1,1 +1,8 @@
-
+{
+“lavalink”: “4.0.8”,
+“plugins”: {
+“youtube-plugin”: “1.11.5”,
+“lavasrc-plugin”: “4.0.0”,
+“lavasearch-plugin”: “1.0.0”
+}
+}
