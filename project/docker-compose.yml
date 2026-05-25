@@ -1,237 +1,456 @@
-version: "3.9"
+version: “3.9”
+
+=====================================================
+
+NETWORK
+
+=====================================================
 
 networks:
-  rf-net:
-    driver: bridge
+rf-net:
+driver: bridge
+
+=====================================================
+
+VOLUMES
+
+=====================================================
 
 volumes:
-  redis-data:
-  postgres-data:
-  prometheus-data:
-  grafana-data:
+redis-data:
+postgres-data:
+prometheus-data:
+grafana-data:
 
-# =====================================================
-# COMMON
-# =====================================================
+=====================================================
+
+COMMON TEMPLATES
+
+=====================================================
+
 x-restart: &restart
-  restart: unless-stopped
+restart: unless-stopped
 
 x-health: &health
-  interval: 10s
-  timeout: 3s
-  retries: 5
-  start_period: 15s
+interval: 30s
+timeout: 5s
+retries: 5
+start_period: 20s
 
-# =====================================================
-# REDIS (production-safe single node OR sentinel ready)
-# =====================================================
+x-logging: &logging
+logging:
+driver: “json-file”
+options:
+max-size: “10m”
+max-file: “5”
+
+x-resources: &resources
+deploy:
+resources:
+limits:
+cpus: “1.5”
+memory: 2G
+reservations:
+memory: 512M
+
+=====================================================
+
+SERVICES
+
+=====================================================
+
 services:
 
+=====================================================
+
+REDIS
+
+=====================================================
+
+redis:
+image: redis:7-alpine
+container_name: rf-redis
+
+command:
+  - redis-server
+  - --appendonly
+  - "yes"
+  - --maxmemory
+  - 512mb
+  - --maxmemory-policy
+  - allkeys-lru
+volumes:
+  - redis-data:/data
+networks:
+  - rf-net
+healthcheck:
+  test: ["CMD", "redis-cli", "ping"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+POSTGRES
+
+=====================================================
+
+postgres:
+image: postgres:16
+container_name: rf-postgres
+
+env_file:
+  - .env
+environment:
+  POSTGRES_USER: rf
+  POSTGRES_PASSWORD: rfpass
+  POSTGRES_DB: rfstudio
+volumes:
+  - postgres-data:/var/lib/postgresql/data
+networks:
+  - rf-net
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U rf"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+EVENT BUS
+
+=====================================================
+
+event-bus:
+build: ../distributed-event-bus
+
+container_name: rf-event-bus
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
   redis:
-    image: redis:7-alpine
-    container_name: rf-redis
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
-    volumes:
-      - redis-data:/data
-    networks: [rf-net]
-    <<: *restart
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      <<: *health
+    condition: service_healthy
+environment:
+  REDIS_URL: redis://redis:6379
+healthcheck:
+  test: ["CMD", "node", "-e", "process.exit(0)"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
 
-# =====================================================
-# POSTGRES (single node → managed推奨)
-# =====================================================
-  postgres:
-    image: postgres:16
-    container_name: rf-postgres
-    environment:
-      POSTGRES_USER: rf
-      POSTGRES_PASSWORD: rfpass
-      POSTGRES_DB: rfstudio
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks: [rf-net]
-    <<: *restart
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rf"]
-      <<: *health
+=====================================================
 
-# =====================================================
-# EVENT BUS (Redis Streams)
-# =====================================================
-  event-bus:
-    build: ../distributed-event-bus
-    container_name: rf-event-bus
-    networks: [rf-net]
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      REDIS_URL: redis://redis:6379
-    <<: *restart
+LAVALINK PRIMARY
 
-# =====================================================
-# LAVALINK PRIMARY
-# =====================================================
+=====================================================
+
+lavalink-primary:
+build: .
+
+container_name: rf-lavalink-primary
+working_dir: /app
+env_file:
+  - .env
+environment:
+  JAVA_OPTS: "-Xms512m -Xmx2G -XX:+UseG1GC"
+command:
+  - sh
+  - -c
+  - java $JAVA_OPTS -jar Lavalink.jar
+ports:
+  - "2333:2333"
+volumes:
+  - ./plugins:/app/plugins
+  - ./logs:/app/logs
+  - ./temp:/app/temp
+networks:
+  - rf-net
+depends_on:
+  redis:
+    condition: service_healthy
+healthcheck:
+  test: ["CMD", "bash", "/app/scripts/debug/healthcheck.sh"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+LAVALINK BACKUP
+
+=====================================================
+
+lavalink-backup:
+build: .
+
+container_name: rf-lavalink-backup
+working_dir: /app
+env_file:
+  - .env
+environment:
+  JAVA_OPTS: "-Xms512m -Xmx2G -XX:+UseG1GC"
+command:
+  - sh
+  - -c
+  - java $JAVA_OPTS -jar Lavalink.jar
+ports:
+  - "2334:2333"
+volumes:
+  - ./plugins:/app/plugins
+  - ./logs:/app/logs
+  - ./temp:/app/temp
+networks:
+  - rf-net
+depends_on:
+  redis:
+    condition: service_healthy
+healthcheck:
+  test: ["CMD", "bash", "/app/scripts/debug/healthcheck.sh"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+PLAYBACK ROUTER
+
+=====================================================
+
+playback-router:
+build: ../services/playback-router
+
+container_name: rf-playback-router
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
   lavalink-primary:
-    image: eclipse-temurin:17-jre
-    container_name: rf-lavalink-primary
-    working_dir: /app
-    volumes:
-      - ../lavalink-cluster/primary:/app
-    command: ["java", "-Xms512m", "-Xmx2g", "-XX:+UseG1GC", "-jar", "Lavalink.jar"]
-    networks: [rf-net]
-    ports:
-      - "2333:2333"
-    <<: *restart
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:2333/v4/info || exit 1"]
-      <<: *health
-
-# =====================================================
-# LAVALINK BACKUP
-# =====================================================
+    condition: service_healthy
   lavalink-backup:
-    image: eclipse-temurin:17-jre
-    container_name: rf-lavalink-backup
-    working_dir: /app
-    volumes:
-      - ../lavalink-cluster/backup:/app
-    command: ["java", "-Xms512m", "-Xmx2g", "-XX:+UseG1GC", "-jar", "Lavalink.jar"]
-    networks: [rf-net]
-    ports:
-      - "2334:2333"
-    <<: *restart
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:2333/v4/info || exit 1"]
-      <<: *health
+    condition: service_healthy
+environment:
+  PRIMARY_URL: http://lavalink-primary:2333
+  BACKUP_URL: http://lavalink-backup:2333
+<<:
+  - *restart
+  - *logging
+  - *resources
 
-# =====================================================
-# PLAYBACK ROUTER (FAILOVER CORE)
-# =====================================================
-  playback-router:
-    build: ../services/playback-router
-    container_name: rf-playback-router
-    networks: [rf-net]
-    depends_on:
-      lavalink-primary:
-        condition: service_healthy
-      lavalink-backup:
-        condition: service_healthy
-    environment:
-      PRIMARY_URL: http://lavalink-primary:2333
-      BACKUP_URL: http://lavalink-backup:2333
-    <<: *restart
+=====================================================
 
-# =====================================================
-# EDGE LAYER (SPOF削除済み2台構成)
-# =====================================================
-  edge-gateway-1:
-    build: ../gateway/edge-gateway
-    container_name: rf-edge-1
-    networks: [rf-net]
-    ports:
-      - "80:80"
-    <<: *restart
+EDGE GATEWAY
 
-  edge-gateway-2:
-    build: ../gateway/edge-gateway
-    container_name: rf-edge-2
-    networks: [rf-net]
-    ports:
-      - "8081:80"
-    <<: *restart
+=====================================================
 
-# =====================================================
-# API GATEWAY
-# =====================================================
-  api-gateway:
-    build: ../gateway/api-gateway
-    container_name: rf-api
-    networks: [rf-net]
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    environment:
-      REDIS_URL: redis://redis:6379
-      POSTGRES_URL: postgres://rf:rfpass@postgres:5432/rfstudio
-    <<: *restart
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
-      <<: *health
+edge-gateway-1:
+build: ../gateway/edge-gateway
 
-# =====================================================
-# SHARD MANAGER (BOT SCALING CORE)
-# =====================================================
+container_name: rf-edge-1
+networks:
+  - rf-net
+ports:
+  - "80:80"
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+edge-gateway-2:
+build: ../gateway/edge-gateway
+
+container_name: rf-edge-2
+networks:
+  - rf-net
+ports:
+  - "8081:80"
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+API GATEWAY
+
+=====================================================
+
+api-gateway:
+build: ../gateway/api-gateway
+
+container_name: rf-api
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
+  redis:
+    condition: service_healthy
+  postgres:
+    condition: service_healthy
+environment:
+  REDIS_URL: redis://redis:6379
+  POSTGRES_URL: postgres://rf:rfpass@postgres:5432/rfstudio
+healthcheck:
+  test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+  <<: *health
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+SHARD MANAGER
+
+=====================================================
+
+shard-manager:
+build: ../infra/discord-sharding/shard-manager
+
+container_name: rf-shard
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
+  redis:
+    condition: service_healthy
+environment:
+  REDIS_URL: redis://redis:6379
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+ORCHESTRATOR
+
+=====================================================
+
+discord-orchestrator:
+build: ../apps/discord-orchestrator
+
+container_name: rf-orchestrator
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
   shard-manager:
-    build: ../infra/discord-sharding/shard-manager
-    container_name: rf-shard
-    networks: [rf-net]
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      REDIS_URL: redis://redis:6379
-    <<: *restart
+    condition: service_started
+  playback-router:
+    condition: service_started
+environment:
+  REDIS_URL: redis://redis:6379
+  PLAYBACK_ROUTER: http://playback-router:3000
+<<:
+  - *restart
+  - *logging
+  - *resources
 
-# =====================================================
-# ORCHESTRATOR
-# =====================================================
+=====================================================
+
+MUSIC BOT
+
+=====================================================
+
+discord-music:
+build: ../apps/discord-music-gateway
+
+container_name: rf-music
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
   discord-orchestrator:
-    build: ../apps/discord-orchestrator
-    container_name: rf-orchestrator
-    networks: [rf-net]
-    depends_on:
-      shard-manager:
-        condition: service_started
-      playback-router:
-        condition: service_started
-    environment:
-      REDIS_URL: redis://redis:6379
-      PLAYBACK_ROUTER: http://playback-router:3000
-    <<: *restart
+    condition: service_started
+<<:
+  - *restart
+  - *logging
+  - *resources
 
-# =====================================================
-# BOTS
-# =====================================================
-  discord-music:
-    build: ../apps/discord-music-gateway
-    networks: [rf-net]
-    depends_on:
-      discord-orchestrator:
-        condition: service_started
-    <<: *restart
+=====================================================
 
-  discord-quiz:
-    build: ../apps/discord-quiz-gateway
-    networks: [rf-net]
-    depends_on:
-      discord-orchestrator:
-        condition: service_started
-    <<: *restart
+QUIZ BOT
 
-# =====================================================
-# OBSERVABILITY
-# =====================================================
-  prometheus:
-    image: prom/prometheus
-    container_name: rf-prom
-    volumes:
-      - prometheus-data:/prometheus
-    networks: [rf-net]
-    ports:
-      - "9090:9090"
-    <<: *restart
+=====================================================
 
-  grafana:
-    image: grafana/grafana
-    container_name: rf-grafana
-    volumes:
-      - grafana-data:/var/lib/grafana
-    networks: [rf-net]
-    ports:
-      - "3001:3000"
-    <<: *restart
+discord-quiz:
+build: ../apps/discord-quiz-gateway
+
+container_name: rf-quiz
+env_file:
+  - .env
+networks:
+  - rf-net
+depends_on:
+  discord-orchestrator:
+    condition: service_started
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+PROMETHEUS
+
+=====================================================
+
+prometheus:
+image: prom/prometheus
+
+container_name: rf-prometheus
+ports:
+  - "9090:9090"
+volumes:
+  - prometheus-data:/prometheus
+  - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+networks:
+  - rf-net
+<<:
+  - *restart
+  - *logging
+  - *resources
+
+=====================================================
+
+GRAFANA
+
+=====================================================
+
+grafana:
+image: grafana/grafana
+
+container_name: rf-grafana
+ports:
+  - "3001:3000"
+volumes:
+  - grafana-data:/var/lib/grafana
+  - ./configs/grafana:/etc/grafana/provisioning
+environment:
+  GF_SECURITY_ADMIN_USER: admin
+  GF_SECURITY_ADMIN_PASSWORD: admin
+networks:
+  - rf-net
+depends_on:
+  - prometheus
+<<:
+  - *restart
+  - *logging
+  - *resources
