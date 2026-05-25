@@ -1,3 +1,1 @@
-mv docker-compose.yml infra/docker/
-mv docker-compose.prod.yml infra/docker/ 2>/dev/null
-mv docker-compose.observability.yml infra/docker/ 2>/dev/null
+
