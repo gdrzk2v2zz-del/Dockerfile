@@ -1,50 +1,107 @@
 server:
-  port: 2333
-  address: 0.0.0.0
-  shutdown: graceful
+port: 2333
+address: 0.0.0.0
+shutdown: graceful
+
+=====================================================
+
+LAVALINK
+
+=====================================================
 
 lavalink:
-  server:
-    password: ${LAVALINK_PASSWORD}
+server:
 
-    sources:
-      youtube: true
-      soundcloud: true
-      bandcamp: false
-      twitch: false
-      vimeo: false
-      http: true
-      local: false
+# =================================================
+# AUTH
+# =================================================
+password: ${LAVALINK_PASSWORD}
+# =================================================
+# AUDIO SOURCES
+# =================================================
+sources:
+  youtube: true
+  soundcloud: true
+  http: true
+  # disabled (stability / lower attack surface)
+  bandcamp: false
+  twitch: false
+  vimeo: false
+  local: false
+# =================================================
+# PERFORMANCE / AUDIO STABILITY
+# =================================================
+# 音切れ対策
+bufferDurationMs: 400
+# Discord送信バッファ
+frameBufferDurationMs: 5000
+# opus quality (10 = high)
+opusEncodingQuality: 10
+# CPU削減重視
+resamplingQuality: LOW
+# =================================================
+# LOAD CONTROL
+# =================================================
+# playlist爆撃対策
+youtubePlaylistLoadLimit: 6
+# player update頻度
+playerUpdateInterval: 5
+# 検索負荷削減
+youtubeSearchEnabled: false
 
-    bufferDurationMs: 700
-    frameBufferDurationMs: 5000
-    opusEncodingQuality: 10
-    resamplingQuality: LOW
+=====================================================
 
-    youtubePlaylistLoadLimit: 6
-    playerUpdateInterval: 5
+METRICS
 
-    youtubeSearchEnabled: false
+=====================================================
 
 metrics:
-  prometheus:
-    enabled: true
-    endpoint: /metrics
-    collectDefaultMetrics: true
+prometheus:
+enabled: true
+endpoint: /metrics
+collectDefaultMetrics: true
 
-logging:
-  level:
-    root: WARN
-    lavalink: INFO
+=====================================================
 
-plugins:
-  # dependency形式のみ（必要時）
-  # - dependency: "com.example:plugin:1.0.0"
+REST API
+
+=====================================================
 
 rest:
-  enabled: true
+enabled: true
+
+=====================================================
+
+HTTP
+
+=====================================================
 
 http:
-  enabled: true
-  bindAddress: 0.0.0.0
-  port: 2333
+enabled: true
+bindAddress: 0.0.0.0
+port: 2333
+
+=====================================================
+
+LOGGING
+
+=====================================================
+
+logging:
+level:
+root: WARN
+lavalink: INFO
+
+=====================================================
+
+PLUGINS
+
+=====================================================
+
+plugins:
+youtube:
+enabled: true
+
+dependency形式で追加する場合
+
+- dependency: “com.example:plugin:1.0.0”
