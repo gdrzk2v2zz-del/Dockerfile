@@ -1,1 +1,50 @@
+server:
+  port: 2333
+  address: 0.0.0.0
+  shutdown: graceful
 
+lavalink:
+  server:
+    password: ${LAVALINK_PASSWORD}
+
+    sources:
+      youtube: true
+      soundcloud: true
+      bandcamp: false
+      twitch: false
+      vimeo: false
+      http: true
+      local: false
+
+    bufferDurationMs: 700
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+
+    youtubeSearchEnabled: false
+
+metrics:
+  prometheus:
+    enabled: true
+    endpoint: /metrics
+    collectDefaultMetrics: true
+
+logging:
+  level:
+    root: WARN
+    lavalink: INFO
+
+plugins:
+  # dependency形式のみ（必要時）
+  # - dependency: "com.example:plugin:1.0.0"
+
+rest:
+  enabled: true
+
+http:
+  enabled: true
+  bindAddress: 0.0.0.0
+  port: 2333
