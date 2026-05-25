@@ -2,79 +2,67 @@ FROM eclipse-temurin:17-jre
 
 WORKDIR /app
 
-# =========================
-# minimal stable deps
-# =========================
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    tini \
-    procps \
- && rm -rf /var/lib/apt/lists/*
+=========================
 
-# =========================
-# version pin (安定の最重要要素)
-# =========================
+packages
+
+=========================
+
+RUN apt-get update && apt-get install -y 
+curl 
+ca-certificates 
+dumb-init 
+&& rm -rf /var/lib/apt/lists/*
+
+=========================
+
+Lavalink version pinning
+
+=========================
+
 ARG LAVALINK_VERSION=4.0.8
 
-RUN curl -fsSL --retry 3 --retry-delay 2 \
- -o Lavalink.jar \
+RUN curl -L -o Lavalink.jar 
 https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar
 
-# =========================
-# directories
-# =========================
-RUN mkdir -p /app/logs /app/data /app/plugins
+=========================
 
-# =========================
-# user isolation
-# =========================
-RUN useradd -m lavalink \
- && chown -R lavalink:lavalink /app
+config
+
+=========================
+
+COPY application.yml /app/application.yml
+COPY plugins /app/plugins
+
+=========================
+
+logs/temp
+
+=========================
+
+RUN mkdir -p /app/logs /app/temp
+
+=========================
+
+non-root
+
+=========================
+
+RUN useradd -m lavalink 
+&& chown -R lavalink:lavalink /app
 
 USER lavalink
 
-# =========================
-# port
-# =========================
+=========================
+
+JVM tuning
+
+=========================
+
+ENV JAVA_OPTS=”-Xms512m -Xmx2G -XX:+UseG1GC”
+
 EXPOSE 2333
 
-# =========================
-# JVM stability tuning (重要)
-# =========================
-ENV JAVA_OPTS="\
--Xms2G \
--Xmx3G \
--XX:+UseG1GC \
--XX:MaxGCPauseMillis=120 \
--XX:+ParallelRefProcEnabled \
--XX:+UseStringDeduplication \
--XX:+DisableExplicitGC \
--XX:+ExitOnOutOfMemoryError \
--XX:+HeapDumpOnOutOfMemoryError \
--XX:HeapDumpPath=/app/logs \
--XX:+AlwaysPreTouch \
--Djava.awt.headless=true \
--Dfile.encoding=UTF-8"
+ENTRYPOINT [”/usr/bin/dumb-init”, “–”]
 
-# =========================
-# healthcheck (重要)
-# =========================
-HEALTHCHECK --interval=20s --timeout=5s --retries=5 --start-period=20s \
-CMD curl -fsS http://localhost:2333/v4/info || exit 1
-
-# =========================
-# signal handling
-# =========================
-STOPSIGNAL SIGTERM
-
-# =========================
-# tini (必須級安定化)
-# =========================
-ENTRYPOINT ["/usr/bin/tini", "--"]
-
-# =========================
-# start
-# =========================
-CMD ["sh", "-c", "exec java $JAVA_OPTS -jar Lavalink.jar"]
+CMD [“sh”, “-c”, “java $JAVA_OPTS -jar Lavalink.jar”]
