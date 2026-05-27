@@ -12,13 +12,11 @@ volumes:
 
 services:
 
-  # =========================
-  # REDIS
-  # =========================
   redis:
     image: redis:7-alpine
     container_name: rf-redis
     restart: unless-stopped
+
     command:
       - redis-server
       - --appendonly
@@ -27,15 +25,19 @@ services:
       - 512mb
       - --maxmemory-policy
       - allkeys-lru
+
     volumes:
       - redis-data:/data
+
     networks:
       - rf-net
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -43,28 +45,31 @@ services:
       retries: 5
       start_period: 20s
 
-  # =========================
-  # POSTGRES
-  # =========================
   postgres:
     image: postgres:16
     container_name: rf-postgres
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       POSTGRES_USER: rf
       POSTGRES_PASSWORD: rfpass
       POSTGRES_DB: rfstudio
+
     volumes:
       - postgres-data:/var/lib/postgresql/data
+
     networks:
       - rf-net
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rf"]
       interval: 30s
@@ -72,57 +77,69 @@ services:
       retries: 5
       start_period: 20s
 
-  # =========================
-  # EVENT BUS
-  # =========================
   event-bus:
     build: ../distributed-event-bus
     container_name: rf-event-bus
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       REDIS_URL: redis://redis:6379
+
     depends_on:
       redis:
         condition: service_healthy
+
     networks:
       - rf-net
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
 
-  # =========================
-  # LAVALINK PRIMARY
-  # =========================
   lavalink-primary:
     build: .
     container_name: rf-lavalink-primary
     restart: unless-stopped
+
     working_dir: /app
+
     env_file:
       - .env
+
     environment:
       JAVA_OPTS: "-Xms512m -Xmx2G -XX:+UseG1GC"
-    command: ["sh", "-c", "java $JAVA_OPTS -jar Lavalink.jar"]
+
+    command:
+      - sh
+      - -c
+      - java $JAVA_OPTS -jar Lavalink.jar
+
     ports:
       - "2333:2333"
+
     volumes:
       - ./plugins:/app/plugins
       - ./logs:/app/logs
       - ./temp:/app/temp
+
     networks:
       - rf-net
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
-    depends_on:
-      redis:
-        condition: service_healthy
+
     healthcheck:
       test: ["CMD-SHELL", "bash /app/scripts/debug/healthcheck.sh"]
       interval: 30s
@@ -130,35 +147,45 @@ services:
       retries: 5
       start_period: 20s
 
-  # =========================
-  # LAVALINK BACKUP
-  # =========================
   lavalink-backup:
     build: .
     container_name: rf-lavalink-backup
     restart: unless-stopped
+
     working_dir: /app
+
     env_file:
       - .env
+
     environment:
       JAVA_OPTS: "-Xms512m -Xmx2G -XX:+UseG1GC"
-    command: ["sh", "-c", "java $JAVA_OPTS -jar Lavalink.jar"]
+
+    command:
+      - sh
+      - -c
+      - java $JAVA_OPTS -jar Lavalink.jar
+
     ports:
       - "2334:2333"
+
     volumes:
       - ./plugins:/app/plugins
       - ./logs:/app/logs
       - ./temp:/app/temp
+
     networks:
       - rf-net
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
-    depends_on:
-      redis:
-        condition: service_healthy
+
     healthcheck:
       test: ["CMD-SHELL", "bash /app/scripts/debug/healthcheck.sh"]
       interval: 30s
@@ -166,66 +193,50 @@ services:
       retries: 5
       start_period: 20s
 
-  # =========================
-  # PLAYBACK ROUTER
-  # =========================
   playback-router:
     build: ../services/playback-router
     container_name: rf-playback-router
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       PRIMARY_URL: http://lavalink-primary:2333
       BACKUP_URL: http://lavalink-backup:2333
-    networks:
-      - rf-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
 
-  # =========================
-  # EDGE GATEWAY
-  # =========================
-  edge-gateway-1:
-    build: ../gateway/edge-gateway
-    container_name: rf-edge-1
-    restart: unless-stopped
-    ports:
-      - "80:80"
     networks:
       - rf-net
 
-  edge-gateway-2:
-    build: ../gateway/edge-gateway
-    container_name: rf-edge-2
-    restart: unless-stopped
-    ports:
-      - "8081:80"
-    networks:
-      - rf-net
+    depends_on:
+      lavalink-primary:
+        condition: service_healthy
 
-  # =========================
-  # API GATEWAY
-  # =========================
+      lavalink-backup:
+        condition: service_healthy
+
   api-gateway:
     build: ../gateway/api-gateway
     container_name: rf-api
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       REDIS_URL: redis://redis:6379
       POSTGRES_URL: postgres://rf:rfpass@postgres:5432/rfstudio
+
     networks:
       - rf-net
+
     depends_on:
       redis:
         condition: service_healthy
+
       postgres:
         condition: service_healthy
+
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
       interval: 30s
@@ -233,44 +244,43 @@ services:
       retries: 5
       start_period: 20s
 
-  # =========================
-  # SHARD MANAGER
-  # =========================
   shard-manager:
     build: ../infra/discord-sharding/shard-manager
     container_name: rf-shard
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       REDIS_URL: redis://redis:6379
+
     networks:
       - rf-net
 
-  # =========================
-  # ORCHESTRATOR
-  # =========================
   discord-orchestrator:
     build: ../apps/discord-orchestrator
     container_name: rf-orchestrator
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       REDIS_URL: redis://redis:6379
       PLAYBACK_ROUTER: http://playback-router:3000
+
     networks:
       - rf-net
 
-  # =========================
-  # BOTS
-  # =========================
   discord-music:
     build: ../apps/discord-music-gateway
     container_name: rf-music
     restart: unless-stopped
+
     env_file:
       - .env
+
     networks:
       - rf-net
 
@@ -278,23 +288,25 @@ services:
     build: ../apps/discord-quiz-gateway
     container_name: rf-quiz
     restart: unless-stopped
+
     env_file:
       - .env
+
     networks:
       - rf-net
 
-  # =========================
-  # MONITORING
-  # =========================
   prometheus:
     image: prom/prometheus
     container_name: rf-prometheus
     restart: unless-stopped
+
     ports:
       - "9090:9090"
+
     volumes:
       - prometheus-data:/prometheus
       - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+
     networks:
       - rf-net
 
@@ -302,13 +314,20 @@ services:
     image: grafana/grafana
     container_name: rf-grafana
     restart: unless-stopped
+
     ports:
       - "3001:3000"
+
     volumes:
       - grafana-data:/var/lib/grafana
       - ./configs/grafana:/etc/grafana/provisioning
+
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+
     networks:
       - rf-net
+
+    depends_on:
+      - prometheus
