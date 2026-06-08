@@ -1,10 +1,9 @@
-FROM eclipse-temurin:17-jre
+FROM node:20
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y curl \
- && curl -L -o Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar
+COPY . .
 
-EXPOSE 2333
+RUN npm install
 
-CMD ["java", "-jar", "Lavalink.jar"]
+CMD ["node", "apps/discord-gateway/src/bot.js"]

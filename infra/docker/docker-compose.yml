@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  bot:
+    build: ../..
+    container_name: discord-bot
+
+    restart: unless-stopped
+
+    environment:
+      - NODE_ENV=production
+
+    # ❗ 1プロセス固定
+    deploy:
+      replicas: 1
