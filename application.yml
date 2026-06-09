@@ -4,6 +4,8 @@ server:
 spring:
   main:
     banner-mode: "off"
+  config:
+    import: "optional:configserver:"
 
 lavalink:
   server:
