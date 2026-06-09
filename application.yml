@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+spring:
+  config:
+    import: optional:configserver:
+
+lavalink:
+  server:
+    password: "youshallnotpass"
+
+    sources:
+      youtube: true
+      soundcloud: true
+
+logging:
+  level:
+    root: INFO
