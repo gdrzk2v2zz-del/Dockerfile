@@ -4,17 +4,15 @@ server:
 spring:
   main:
     banner-mode: "off"
-  config:
-    import: "optional:configserver:"
+
+  cloud:
+    config:
+      enabled: false
 
 lavalink:
   server:
     password: "youshallnotpass"
+
     sources:
       youtube: true
       bandcamp: true
-
-spring:
-  cloud:
-    config:
-      enabled: false
