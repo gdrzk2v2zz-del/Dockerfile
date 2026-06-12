@@ -1,0 +1,44 @@
+const { Shoukaku, Connectors } = require("shoukaku");
+
+let instance;
+
+module.exports = function createShoukaku(client) {
+  if (global.__SHOUKAKU__) return global.__SHOUKAKU__;
+
+  const nodes = [
+    {
+      name: "lavalink",
+      url: "localhost:2333",
+      auth: "youshallnotpass",
+      secure: false
+    }
+  ];
+
+  instance = new Shoukaku(
+    new Connectors.DiscordJS(client),
+    nodes,
+    {
+      moveOnDisconnect: true,
+      resume: true,
+      resumeTimeout: 60,
+      reconnectTries: Infinity,
+      reconnectInterval: 5000
+    }
+  );
+
+  global.__SHOUKAKU__ = instance;
+
+  instance.on("ready", (name) => {
+    console.log("🟢 SHOUKAKU CONNECTED:", name);
+  });
+
+  instance.on("error", (name, err) => {
+    console.error("🔴 SHOUKAKU ERROR:", err.message);
+  });
+
+  instance.on("disconnect", () => {
+    console.warn("🟠 SHOUKAKU DISCONNECTED → retrying...");
+  });
+
+  return instance;
+};

@@ -1,0 +1,21 @@
+function buildNodes() {
+  const auth = process.env.LAVALINK_PASSWORD || "youshallnotpass";
+
+  // Docker優先 → ダメならlocalhost
+  const candidates = [
+    "lavalink",
+    "localhost",
+    "127.0.0.1"
+  ];
+
+  const port = process.env.LAVALINK_PORT || "2333";
+
+  return candidates.map((host) => ({
+    name: host,
+    url: `${host}:${port}`,
+    auth,
+    secure: false
+  }));
+}
+
+module.exports = buildNodes;

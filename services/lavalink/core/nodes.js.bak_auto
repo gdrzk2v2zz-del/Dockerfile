@@ -1,0 +1,11 @@
+const nodes = [
+  {
+    name: "lavalink",
+    url: process.env.LAVALINK_HOST,
+    port: Number(process.env.LAVALINK_PORT),
+    auth: process.env.LAVALINK_PASSWORD,
+    secure: process.env.LAVALINK_SECURE === "true"
+  }
+];
+
+module.exports = nodes;
