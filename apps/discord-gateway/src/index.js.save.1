@@ -1,0 +1,25 @@
+require("dotenv").config();
+
+const { Client, GatewayIntentBits } = require("discord.js");
+const { initDB } = require("../../services/db");
+const { initLavalink } = require("../../services/lavalink");
+
+const startBot = require("./bot");
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
+initDB();
+initLavalink(client);
+
+startBot(client);
+
+client.login(process.env.TOKEN);
+
+console.log("[gateway] started");
