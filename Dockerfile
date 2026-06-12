@@ -1,11 +1,11 @@
 FROM node:20
 
-WORKDIR /app/apps/discord-gateway
+WORKDIR /app
 
-COPY apps/discord-gateway/package*.json ./
+COPY Intro3/apps/discord-gateway/package*.json ./
 
 RUN npm install --omit=dev
 
-COPY apps/discord-gateway ./
+COPY Intro3/apps/discord-gateway ./
 
 CMD ["node","src/bot.js"]
